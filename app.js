@@ -19,7 +19,7 @@ window.generateBackendCode = function() {
         return;
     }
     
-    const code = `from flask import Flask, request, jsonify, send_from_directory
+    const code = `from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from telegram import Bot
 import asyncio
@@ -31,16 +31,13 @@ from io import BytesIO
 app = Flask(__name__)
 CORS(app)
 
-# Configuration
 BOT_TOKEN = "${botToken}"
 CHANNEL_USERNAME = "${channelUsername}"
 DATABASE_FILE = "file_database.json"
 
 bot = Bot(token=BOT_TOKEN)
 
-# Helper function to run async code properly
 def run_async(coro):
-    """Run async code in a way that handles event loop issues"""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
@@ -50,7 +47,6 @@ def run_async(coro):
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
 
-# Initialize database
 if not os.path.exists(DATABASE_FILE):
     with open(DATABASE_FILE, 'w') as f:
         json.dump({}, f)
@@ -65,17 +61,14 @@ def save_database(data):
 
 @app.route('/')
 def index():
-    """Serve the main HTML page"""
     return send_from_directory('.', 'index.html')
 
 @app.route('/style.css')
 def serve_css():
-    """Serve CSS file"""
     return send_from_directory('.', 'style.css')
 
 @app.route('/app.js')
 def serve_js():
-    """Serve JavaScript file"""
     return send_from_directory('.', 'app.js')
 
 @app.route('/upload', methods=['POST'])
@@ -88,11 +81,9 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
-        # Read file content into memory
         file_content = file.read()
         file.seek(0)
         
-        # Run async Telegram operation
         async def send_to_telegram():
             message = await bot.send_document(
                 chat_id=CHANNEL_USERNAME,
@@ -104,7 +95,6 @@ def upload_file():
         
         file_id = run_async(send_to_telegram())
         
-        # Save to database
         db = load_database()
         db[file.filename] = {
             'file_id': file_id,
@@ -164,12 +154,10 @@ def download_file_content(identifier):
         file_id = None
         filename = None
         
-        # Check if identifier is a filename in database
         if identifier in db:
             filename = identifier
             file_id = db[identifier]['file_id']
         else:
-            # Search for file_id in database
             for fname, fdata in db.items():
                 if fdata['file_id'] == identifier:
                     filename = fname
@@ -179,7 +167,6 @@ def download_file_content(identifier):
         if not file_id:
             return jsonify({'error': 'File not found'}), 404
         
-        # Download file from Telegram
         async def get_file_from_telegram():
             file = await bot.get_file(file_id)
             file_bytes = BytesIO()
@@ -189,8 +176,6 @@ def download_file_content(identifier):
         
         file_content = run_async(get_file_from_telegram())
         
-        # Send file to user
-        from flask import send_file
         return send_file(
             BytesIO(file_content),
             as_attachment=True,
@@ -1462,53 +1447,43 @@ window.testBackendUrl = async function() {
     }
 };`;
 
-    // Create a README file
-    const readmeContent = `# Telegram Cloud Storage
+    const readmeContent = `Telegram Cloud Storage
 
-## Quick Start
+Quick Start:
 
-1. **Install Python dependencies:**
-   \`\`\`
+1. Install Python dependencies:
    pip install flask flask-cors python-telegram-bot
-   \`\`\`
 
-2. **Start the backend:**
-   \`\`\`
+2. Start the backend:
    python backend.py
-   \`\`\`
 
-3. **Open the frontend:**
-   - Open \`index.html\` in your web browser
+3. Open index.html in your web browser
 
-4. **Configure:**
+4. Configure:
    - Go to Settings tab
-   - Set Backend URL to \`http://localhost:5000\` (or your server's IP)
-   - Click "Test" to verify connection
-   - Click "Save Configuration"
+   - Set Backend URL to http://localhost:5000
+   - Click Test to verify connection
+   - Click Save Configuration
 
-## Your Configuration
-
+Your Configuration:
 - Bot Token: ${botToken}
 - Channel: ${channelUsername}
 - Port: ${port}
 
-## Important Notes
+Important:
+- Bot must be admin in the Telegram channel
+- Channel must be private
+- Keep bot token secret
 
-- Make sure your bot is added as an admin to the Telegram channel
-- The channel must be private
-- Keep your bot token secret
+Usage:
+1. Upload: Go to Upload tab, select file, click Upload
+2. Download: Go to Download tab, enter filename
+3. View Files: Check Dashboard for all uploaded files
 
-## Usage
-
-1. **Upload Files**: Go to Upload tab, select a file, and click Upload
-2. **Download Files**: Go to Download tab, enter filename to get File ID
-3. **View Files**: Check Dashboard for list of all uploaded files
-
-## Troubleshooting
-
-- If connection fails, ensure backend is running: \`python backend.py\`
-- Check that firewall allows connections on port ${port}
-- Verify bot token and channel username are correct
+Troubleshooting:
+- If connection fails: python backend.py
+- Check firewall allows port ${port}
+- Verify bot token and channel username
 `;
 
     // Create download function
