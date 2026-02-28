@@ -3,77 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Cloud Storage</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>LTC Payment Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #1e293b; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        .status-box { margin-top: 20px; padding: 15px; border-radius: 8px; background: #334155; display: none; }
+        .pending { color: #fbbf24; }
+        .finished { color: #4ade80; font-weight: bold; }
+        button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; }
+        button:disabled { background: #64748b; cursor: not-allowed; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Telegram Cloud Storage</h1>
-            <p class="subtitle">Unlimited file storage using Telegram</p>
-        </header>
 
-        <!-- Backend Setup Section -->
-        <section id="setup" class="tab-content active">
-            <h2>Backend Configuration</h2>
-            <p class="info-text">Enter your Telegram bot details to generate the backend code</p>
+<div class="container">
+    <h2>LTC Checkout</h2>
+    <p>Enter contact info to proceed</p>
+    
+    <input type="text" id="customerContact" placeholder="Email or Phone Number">
+    <button id="payBtn">Proceed to Payment</button>
 
-            <div class="form-group">
-                <label for="bot-token">Bot Token</label>
-                <input type="text" id="bot-token" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">
-                <small>Get this from @BotFather on Telegram</small>
-            </div>
-
-            <div class="form-group">
-                <label for="channel-username">Channel Username</label>
-                <input type="text" id="channel-username" placeholder="@your_storage_channel">
-                <small>Create a private channel and add your bot as admin</small>
-            </div>
-
-            <div class="form-group">
-                <label for="port">Port (optional)</label>
-                <input type="number" id="port" value="5000" placeholder="5000">
-            </div>
-
-            <div class="form-group">
-                <label for="backend-url">Backend URL</label>
-                <div style="display: flex; gap: 0.5rem;">
-                    <input type="text" id="backend-url" placeholder="http://localhost:5000" style="flex: 1;">
-                    <button class="test-btn" onclick="testBackendUrl()">Test</button>
-                </div>
-                <small>Enter the URL where your backend will run</small>
-                <div id="url-test-result" class="test-result"></div>
-            </div>
-
-            <button class="primary-btn" onclick="generateBackendCode()">Generate Backend Code</button>
-
-            <div id="generated-code" class="code-container" style="display: none;">
-                <div class="code-header">
-                    <h3>Generated Backend Code</h3>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="copy-btn" onclick="downloadAllFiles()">Download All Files</button>
-                        <button class="copy-btn" onclick="copyCode()">Copy Backend</button>
-                    </div>
-                </div>
-                <pre><code id="backend-code"></code></pre>
-                <div class="instructions">
-                    <h4>How to Run:</h4>
-                    <ol>
-                        <li><strong>Download All Files:</strong> Click "Download All Files" to get backend.py, index.html, style.css, and app.js</li>
-                        <li><strong>Install Dependencies:</strong> <code>pip install flask flask-cors python-telegram-bot</code></li>
-                        <li><strong>Start Backend:</strong> <code>python backend.py</code></li>
-                        <li><strong>Open Frontend:</strong> Open <code>index.html</code> in your browser</li>
-                        <li><strong>Configure:</strong> In the web interface, set backend URL to <code>http://localhost:5000</code> (or your server IP)</li>
-                    </ol>
-                </div>
-            </div>
-
-            <button class="secondary-btn" onclick="saveBackendConfig()">Save Configuration</button>
-
-        </section>
+    <div id="statusBox" class="status-box">
+        Current Status: <span id="statusText" class="pending">Pending</span>
     </div>
+</div>
 
-    <script type="module" src="app.js"></script>
+<script>
+    // 1. YOUR SUPABASE CONFIG
+    const SUPABASE_URL = 'https://itszjuzkyhmjuljikqpd.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0c3pqdXpreWhtanVsamlrcXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2Njg3NDIsImV4cCI6MjA4NjI0NDc0Mn0.cRswsDZMds0BshADiSlNXTjoi75HrtGSElSR89BUcpU';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const payBtn = document.getElementById('payBtn');
+    const statusBox = document.getElementById('statusBox');
+    const statusText = document.getElementById('statusText');
+    const contactInput = document.getElementById('customerContact');
+
+    // 2. THE PAYMENT LOGIC
+    payBtn.addEventListener('click', async () => {
+        const contact = contactInput.value;
+        if (!contact) return alert("Please enter contact info");
+
+        payBtn.disabled = true;
+        payBtn.innerText = "Generating Order...";
+
+        // Create the row in Supabase
+        const { data, error } = await supabase
+            .from('orders')
+            .insert([{ 
+                customer_contact: contact, 
+                status: 'waiting',
+                pack_details: 'Standard Testing Pack'
+            }])
+            .select()
+            .single();
+
+        if (error) {
+            alert("Error creating order");
+            payBtn.disabled = false;
+            return;
+        }
+
+        // Show the status tracker on the page
+        statusBox.style.display = 'block';
+        
+        // SUBSCRIBE TO REALTIME UPDATES FOR THIS ORDER
+        supabase
+            .channel('order-updates')
+            .on('postgres_changes', { 
+                event: 'UPDATE', 
+                schema: 'public', 
+                table: 'orders',
+                filter: `id=eq.${data.id}` 
+            }, (payload) => {
+                console.log('Change received!', payload);
+                statusText.innerText = payload.new.status;
+                if (payload.new.status === 'finished') {
+                    statusText.className = 'finished';
+                    alert("Payment Confirmed! Check your email/phone.");
+                }
+            })
+            .subscribe();
+
+        // Redirect user to your NOWPayments link
+        // Note: For a real automated test, you'd want to use a dynamic link,
+        // but for now, we'll open your provided link in a new tab.
+        window.open("https://nowpayments.io/payment/?iid=5182935515&source=button", "_blank");
+        
+        payBtn.innerText = "Waiting for Payment...";
+    });
+</script>
+
 </body>
 </html>
