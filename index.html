@@ -6,92 +6,79 @@
     <title>LTC Payment Test</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: #1e293b; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
-        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
-        .status-box { margin-top: 20px; padding: 15px; border-radius: 8px; background: #334155; display: none; }
-        .pending { color: #fbbf24; }
-        .finished { color: #4ade80; font-weight: bold; }
-        button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; }
-        button:disabled { background: #64748b; cursor: not-allowed; }
+        body { font-family: sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #1e293b; padding: 2rem; border-radius: 12px; text-align: center; width: 350px; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: none; box-sizing: border-box; }
+        button { background: #3b82f6; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; cursor: pointer; }
+        .status-box { margin-top: 15px; display: none; padding: 10px; background: #334155; border-radius: 5px; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>LTC Checkout</h2>
-    <p>Enter contact info to proceed</p>
-    
-    <input type="text" id="customerContact" placeholder="Email or Phone Number">
+    <input type="text" id="customerContact" placeholder="Email or Phone">
     <button id="payBtn">Proceed to Payment</button>
 
     <div id="statusBox" class="status-box">
-        Current Status: <span id="statusText" class="pending">Pending</span>
+        Status: <span id="statusText" style="color: #fbbf24;">pending</span>
     </div>
 </div>
 
 <script>
-    // 1. YOUR SUPABASE CONFIG
     const SUPABASE_URL = 'https://itszjuzkyhmjuljikqpd.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0c3pqdXpreWhtanVsamlrcXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2Njg3NDIsImV4cCI6MjA4NjI0NDc0Mn0.cRswsDZMds0BshADiSlNXTjoi75HrtGSElSR89BUcpU';
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    // Rename variable to avoid conflict with the library name
+    const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const payBtn = document.getElementById('payBtn');
-    const statusBox = document.getElementById('statusBox');
-    const statusText = document.getElementById('statusText');
-    const contactInput = document.getElementById('customerContact');
 
-    // 2. THE PAYMENT LOGIC
     payBtn.addEventListener('click', async () => {
-        const contact = contactInput.value;
-        if (!contact) return alert("Please enter contact info");
+        const contact = document.getElementById('customerContact').value;
+        if (!contact) return alert("Enter contact info");
 
-        payBtn.disabled = true;
-        payBtn.innerText = "Generating Order...";
+        console.log("Attempting to insert...");
 
-        // Create the row in Supabase
-        const { data, error } = await supabase
+        const { data, error } = await client
             .from('orders')
             .insert([{ 
                 customer_contact: contact, 
-                status: 'waiting',
-                pack_details: 'Standard Testing Pack'
+                status: 'pending',
+                pack_details: 'Litecoin Test' 
             }])
-            .select()
-            .single();
+            .select();
 
         if (error) {
-            alert("Error creating order");
-            payBtn.disabled = false;
+            console.error("Error:", error);
+            alert("Error: " + error.message);
             return;
         }
 
-        // Show the status tracker on the page
-        statusBox.style.display = 'block';
-        
-        // SUBSCRIBE TO REALTIME UPDATES FOR THIS ORDER
-        supabase
-            .channel('order-updates')
+        console.log("Inserted successfully:", data);
+        document.getElementById('statusBox').style.display = 'block';
+
+        // Start listening for changes to this specific order
+        client
+            .channel('any')
             .on('postgres_changes', { 
                 event: 'UPDATE', 
                 schema: 'public', 
-                table: 'orders',
-                filter: `id=eq.${data.id}` 
-            }, (payload) => {
+                table: 'orders', 
+                filter: `id=eq.${data[0].id}` 
+            }, payload => {
                 console.log('Change received!', payload);
-                statusText.innerText = payload.new.status;
-                if (payload.new.status === 'finished') {
-                    statusText.className = 'finished';
-                    alert("Payment Confirmed! Check your email/phone.");
+                const newStatus = payload.new.status;
+                document.getElementById('statusText').innerText = newStatus;
+                if (newStatus === 'finished') {
+                    document.getElementById('statusText').style.color = '#4ade80';
+                    alert("Payment Verified!");
                 }
             })
             .subscribe();
 
-        // Redirect user to your NOWPayments link
-        // Note: For a real automated test, you'd want to use a dynamic link,
-        // but for now, we'll open your provided link in a new tab.
-        window.open("https://nowpayments.io/payment/?iid=5182935515&source=button", "_blank");
-        
+        // Open the payment link
+        window.open("https://nowpayments.io/payment/?iid=5182935515", "_blank");
         payBtn.innerText = "Waiting for Payment...";
     });
 </script>
