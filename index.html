@@ -3,84 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LTC PayMent Test</title>
+    <title>LTC Payment - No Watermark</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: #1e293b; padding: 2rem; border-radius: 12px; text-align: center; width: 350px; }
-        input { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: none; box-sizing: border-box; }
-        button { background: #3b82f6; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; cursor: pointer; }
-        .status-box { margin-top: 15px; display: none; padding: 10px; background: #334155; border-radius: 5px; }
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 16px; width: 100%; max-width: 380px; text-align: center; border: 1px solid #334155; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        button { background: #3b82f6; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        
+        /* Payment Details UI */
+        #paymentArea { display: none; margin-top: 20px; padding: 20px; border-top: 1px solid #334155; }
+        #qrcode { background: white; padding: 10px; display: inline-block; border-radius: 8px; margin: 15px 0; }
+        .address-box { background: #0f172a; padding: 10px; border-radius: 5px; font-size: 0.85rem; word-break: break-all; margin: 10px 0; border: 1px solid #3b82f6; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; background: #334155; color: #fbbf24; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>LTC Checkout</h2>
-    <input type="text" id="customerContact" placeholder="Email or Phone">
-    <button id="payBtn">Proceed to Payment</button>
+<div class="card">
+    <div id="setupArea">
+        <h2>Checkout</h2>
+        <p style="color: #94a3b8;">Enter details to generate LTC address</p>
+        <input type="text" id="customerContact" placeholder="Email or Phone Number">
+        <button id="mainBtn" onclick="handleCheckout()">Proceed to Payment</button>
+    </div>
 
-    <div id="statusBox" class="status-box">
-        Status: <span id="statusText" style="color: #fbbf24;">pending</span>
+    <div id="paymentArea">
+        <h3>Pay with Litecoin</h3>
+        <p>Send exactly: <strong id="displayAmount" style="color: #4ade80;"></strong> LTC</p>
+        
+        <div id="qrcode"></div> <div class="address-box" id="displayAddress"></div>
+        
+        <div style="margin-top: 15px;">
+            <span id="displayStatus" class="status-badge">Waiting for deposit...</span>
+        </div>
     </div>
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://itszjuzkyhmjuljikqpd.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0c3pqdXpreWhtanVsamlrcXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2Njg3NDIsImV4cCI6MjA4NjI0NDc0Mn0.cRswsDZMds0BshADiSlNXTjoi75HrtGSElSR89BUcpU';
-    
-    // Rename variable to avoid conflict with the library name
-    const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // CONFIGURATION
+    const SB_URL = 'https://itszjuzkyhmjuljikqpd.supabase.co';
+    const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0c3pqdXpreWhtanVsamlrcXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2Njg3NDIsImV4cCI6MjA4NjI0NDc0Mn0.cRswsDZMds0BshADiSlNXTjoi75HrtGSElSR89BUcpU';
+    const NOW_KEY = '9M734B1-5BB4R02-QQSW86T-PVWKQXS';
 
-    const payBtn = document.getElementById('payBtn');
+    const client = supabase.createClient(SB_URL, SB_KEY);
 
-    payBtn.addEventListener('click', async () => {
+    async function handleCheckout() {
         const contact = document.getElementById('customerContact').value;
         if (!contact) return alert("Enter contact info");
 
-        console.log("Attempting to insert...");
+        document.getElementById('mainBtn').disabled = true;
+        document.getElementById('mainBtn').innerText = "Generating...";
 
-        const { data, error } = await client
-            .from('orders')
-            .insert([{ 
-                customer_contact: contact, 
-                status: 'pending',
-                pack_details: 'Litecoin Test' 
-            }])
-            .select();
+        try {
+            // 1. Create row in Supabase
+            const { data: order, error: sbError } = await client
+                .from('orders')
+                .insert([{ customer_contact: contact, status: 'pending', pack_details: 'LTC Order' }])
+                .select().single();
 
-        if (error) {
-            console.error("Error:", error);
-            alert("Error: " + error.message);
-            return;
+            if (sbError) throw sbError;
+
+            // 2. Get LTC Address from NOWPayments
+            const response = await fetch('https://api.nowpayments.io/v1/payment', {
+                method: 'POST',
+                headers: { 'x-api-key': NOW_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    price_amount: 100, // Amount in NGN
+                    price_currency: 'ngn',
+                    pay_currency: 'ltc',
+                    order_id: order.id
+                })
+            });
+
+            const payData = await response.json();
+
+            // 3. Show the Custom UI
+            document.getElementById('setupArea').style.display = 'none';
+            document.getElementById('paymentArea').style.display = 'block';
+            document.getElementById('displayAmount').innerText = payData.pay_amount;
+            document.getElementById('displayAddress').innerText = payData.pay_address;
+
+            // 4. Generate QR Code
+            new QRCode(document.getElementById("qrcode"), {
+                text: `litecoin:${payData.pay_address}?amount=${payData.pay_amount}`,
+                width: 160,
+                height: 160,
+                colorDark : "#000000",
+                colorLight : "#ffffff"
+            });
+
+            // 5. Listen for the 'finished' status in Supabase Realtime
+            client.channel('track-order')
+                .on('postgres_changes', { 
+                    event: 'UPDATE', 
+                    schema: 'public', 
+                    table: 'orders', 
+                    filter: `id=eq.${order.id}` 
+                }, payload => {
+                    const newStatus = payload.new.status;
+                    document.getElementById('displayStatus').innerText = newStatus;
+                    if (newStatus === 'finished') {
+                        document.getElementById('displayStatus').style.background = '#065f46';
+                        document.getElementById('displayStatus').style.color = '#4ade80';
+                        alert("Success! Your payment was confirmed.");
+                    }
+                }).subscribe();
+
+        } catch (err) {
+            console.error(err);
+            alert("Error: " + err.message);
+            document.getElementById('mainBtn').disabled = false;
         }
-
-        console.log("Inserted successfully:", data);
-        document.getElementById('statusBox').style.display = 'block';
-
-        // Start listening for changes to this specific order
-        client
-            .channel('any')
-            .on('postgres_changes', { 
-                event: 'UPDATE', 
-                schema: 'public', 
-                table: 'orders', 
-                filter: `id=eq.${data[0].id}` 
-            }, payload => {
-                console.log('Change received!', payload);
-                const newStatus = payload.new.status;
-                document.getElementById('statusText').innerText = newStatus;
-                if (newStatus === 'finished') {
-                    document.getElementById('statusText').style.color = '#4ade80';
-                    alert("Payment Verified!");
-                }
-            })
-            .subscribe();
-
-        // Open the payment link
-        window.open("https://nowpayments.io/payment/?iid=5182935515", "_blank");
-        payBtn.innerText = "Waiting for Payment...";
-    });
+    }
 </script>
 
 </body>
